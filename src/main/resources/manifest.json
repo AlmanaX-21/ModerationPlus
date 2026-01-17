@@ -1,0 +1,14 @@
+{
+  "Group": "${group}",
+  "Name": "ModerationPlus",
+  "Version": "${version}",
+  "Description": "${description}",
+  "Authors": [
+    {
+      "Name": "AlmanaX21"
+    }
+  ],
+  "Dependencies": {},
+  "OptionalDependencies": {},
+  "Main": "me.almana.moderationplus.ModerationPlus"
+}
