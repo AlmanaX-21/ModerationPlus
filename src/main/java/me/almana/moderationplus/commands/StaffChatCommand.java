@@ -16,7 +16,7 @@ public class StaffChatCommand extends AbstractCommand {
     private final RequiredArg<String> messageArg;
 
     public StaffChatCommand(me.almana.moderationplus.ModerationPlus plugin) {
-        super("sc", "Send a staff chat message");
+        super("schat", "Send a staff chat message");
 
         this.messageArg = withRequiredArg("message", "Message to send", (ArgumentType<String>) ArgTypes.STRING);
         setAllowsExtraArguments(true);
@@ -33,7 +33,7 @@ public class StaffChatCommand extends AbstractCommand {
 
         String firstWord = ctx.get(messageArg);
         if (firstWord == null || firstWord.trim().isEmpty()) {
-            ctx.sendMessage(Message.raw("Usage: /sc <message>").color(Color.RED));
+            ctx.sendMessage(Message.raw("Usage: /schat <message>").color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
