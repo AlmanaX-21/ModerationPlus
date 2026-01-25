@@ -50,12 +50,12 @@ public class TempBanCommand extends AbstractCommand {
         String targetName = ctx.get(playerArg);
         String durationStr = ctx.get(durationArg);
 
-        // Parse reason
+
         String fullInput = ctx.getInputString();
         String reason = "Banned by an operator.";
         int dIdx = fullInput.toLowerCase().indexOf(" " + durationStr.toLowerCase() + " ");
         if (dIdx != -1) {
-            // Parse substring
+
             String sub = fullInput.substring(dIdx + durationStr.length() + 2).trim();
             if (!sub.isEmpty())
                 reason = sub;
@@ -63,7 +63,7 @@ public class TempBanCommand extends AbstractCommand {
             reason = ctx.get(reasonArg);
         }
 
-        String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
 
         long duration;
         try {
@@ -73,13 +73,7 @@ public class TempBanCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        long expiresAtMillis = System.currentTimeMillis() + duration;
-        Instant expiresOn = Instant.ofEpochMilli(expiresAtMillis);
 
-        String resolvedName = targetName;
-        boolean isOnline = false;
-
-        // Resolve UUID
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
 
         if (targetUuid == null) {
@@ -87,81 +81,23 @@ public class TempBanCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-            isOnline = true;
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-            // Check bypass
-            if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                    "moderation.bypass")) {
-                ctx.sendMessage(Message.raw(resolvedName + " cannot be punished.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
-            }
-        }
-
-        PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-
-        try {
-            // Native ban
-            HytaleBanProvider banProvider = plugin.getBanProvider();
-            if (banProvider != null) {
-                if (banProvider.hasBan(targetUuid)) {
-                    ctx.sendMessage(Message.raw("Player is already natively banned.").color(Color.RED));
-                    return CompletableFuture.completedFuture(null);
-                }
-
-                UUID issuerId = (sender instanceof Player) ? sender.getUuid()
-                        : UUID.nameUUIDFromBytes("CONSOLE".getBytes());
-                TimedBan nativeBan = new TimedBan(targetUuid, issuerId, Instant.now(), expiresOn, reason);
-                banProvider.modify(bans -> {
-                    bans.put(targetUuid, nativeBan);
-                    return true;
-                });
+        plugin.getModerationService().tempBan(targetUuid, targetName, reason, duration, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(
+                        Message.raw("Temp-banned " + targetName + " for " + TimeUtils.formatDuration(duration))
+                                .color(Color.GREEN));
             } else {
-                ctx.sendMessage(Message.raw("Error: Native Ban Provider not found. Tempban failed.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
+                ctx.sendMessage(Message.raw("Failed to temp-ban " + targetName + " (likely bypassed or already banned).")
+                        .color(Color.RED));
             }
+        });
 
-            // Record punishment
-            List<Punishment> activeBans = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(), "BAN");
-            if (activeBans.isEmpty()) {
-                Punishment ban = new Punishment(0, playerData.id(), "BAN", issuerUuid, reason,
-                        System.currentTimeMillis(), expiresAtMillis, true, "{}");
-                plugin.getStorageManager().createPunishment(ban);
-            }
-
-            String formattedDuration = TimeUtils.formatDuration(duration);
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " temp-banned " + resolvedName + " for "
-                    + formattedDuration + " (" + reason + ")";
-            plugin.notifyStaff(Message.raw(staffMsg).color(Color.GREEN));
-
-            if (isOnline && ref != null && ref.isValid()) {
-                final String finalFormattedDuration = formattedDuration;
-                final String finalReason = reason;
-
-                UUID worldUuid = ref.getWorldUuid();
-                if (worldUuid != null) {
-                    World world = Universe.get().getWorld(worldUuid);
-                    if (world != null) {
-                        ((Executor) world).execute(() -> {
-                            if (ref.isValid()) {
-                                ref.getPacketHandler().disconnect(
-                                        "You are banned for " + finalFormattedDuration + ".\nReason: " + finalReason);
-                            }
-                        });
-                    }
-                }
-            }
-
-            ctx.sendMessage(
-                    Message.raw("Temp-banned " + resolvedName + " for " + formattedDuration).color(Color.GREEN));
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing tempban: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
-
 }
+

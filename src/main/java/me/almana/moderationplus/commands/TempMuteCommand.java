@@ -44,12 +44,10 @@ public class TempMuteCommand extends AbstractCommand {
         String targetName = ctx.get(playerArg);
         String durationStr = ctx.get(durationArg);
 
-        // Parse reason
         String fullInput = ctx.getInputString();
         String reason = "Muted by an operator.";
         int dIdx = fullInput.toLowerCase().indexOf(" " + durationStr.toLowerCase() + " ");
         if (dIdx != -1) {
-            // Parse substring
             String sub = fullInput.substring(dIdx + durationStr.length() + 2).trim();
             if (!sub.isEmpty())
                 reason = sub;
@@ -59,7 +57,7 @@ public class TempMuteCommand extends AbstractCommand {
         if (reason == null)
             reason = "Muted by an operator.";
 
-        String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
 
         long duration;
         try {
@@ -69,60 +67,28 @@ public class TempMuteCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        long expiresAtMillis = System.currentTimeMillis() + duration;
-
-        // Resolve UUID
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Cannot resolve UUID for " + targetName).color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-        }
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        // Check bypass
-        if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                "moderation.bypass")) {
-            ctx.sendMessage(Message.raw(resolvedName + " cannot be punished.").color(Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
-        try {
-            PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-
-            // Check active
-            List<Punishment> activeMutes = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(),
-                    "MUTE");
-            if (!activeMutes.isEmpty()) {
-                ctx.sendMessage(Message.raw("Player is already muted.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
-            }
-
-            // Create punishment
-            Punishment mute = new Punishment(0, playerData.id(), "MUTE", issuerUuid, reason, System.currentTimeMillis(),
-                    expiresAtMillis, true, "{}");
-            plugin.getStorageManager().createPunishment(mute);
-
-            // Notify staff
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " temp-muted " + resolvedName + " for "
-                    + durationStr + " (" + reason + ")";
-            plugin.notifyStaff(Message.raw(staffMsg).color(Color.GREEN));
-
-            // Notify target
-            if (ref != null && ref.isValid()) {
-                ref.sendMessage(Message.raw("You have been muted for " + durationStr + ".\nReason: " + reason)
+        plugin.getModerationService().tempMute(targetUuid, targetName, reason, duration, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(
+                        Message.raw("Temp-muted " + targetName + " for " + TimeUtils.formatDuration(duration))
+                                .color(Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to temp-mute " + targetName + " (likely bypassed or already muted).")
                         .color(Color.RED));
             }
+        });
 
-            ctx.sendMessage(Message.raw("Temp-muted " + resolvedName + " for " + durationStr).color(Color.GREEN));
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing tempmute: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

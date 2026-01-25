@@ -37,27 +37,24 @@ public class SetJailCommand extends AbstractCommand {
     public CompletableFuture<Void> execute(CommandContext ctx) {
         CommandSender sender = ctx.sender();
 
+        // Case 1: Coordinates provided
         if (xArg.provided(ctx) && yArg.provided(ctx) && zArg.provided(ctx)) {
-            // Explicit coordinates
             double x = ctx.get(xArg);
             double y = ctx.get(yArg);
             double z = ctx.get(zArg);
             setJailLocation(ctx, x, y, z);
-        } else {
-            // Player position
-            if (!(sender instanceof Player)) {
-                ctx.sendMessage(Message.raw("Console must specify coordinates: /setjail <x> <y> <z>").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
-            }
+            return CompletableFuture.completedFuture(null);
+        }
+
+        // Case 2: No coordinates provided (Use Player Position)
+        if (sender instanceof Player) {
             Player player = (Player) sender;
             final String username = player.getDisplayName();
 
-            // Resolve component
             CompletableFuture.runAsync(() -> {
                 try {
                     PlayerRef ref = Universe.get().getPlayer(username, NameMatching.EXACT);
                     if (ref == null || !ref.isValid()) {
-                        // Invalid reference
                         player.sendMessage(Message.raw("Failed to resolve your player reference.").color(Color.RED));
                         return;
                     }
@@ -81,7 +78,12 @@ public class SetJailCommand extends AbstractCommand {
                     e.printStackTrace();
                 }
             }, player.getWorld());
+
+            return CompletableFuture.completedFuture(null);
         }
+
+        // Case 3: No coordinates, and is Console
+        ctx.sendMessage(Message.raw("Console must specify coordinates: /setjail <x> <y> <z>").color(Color.RED));
         return CompletableFuture.completedFuture(null);
     }
 

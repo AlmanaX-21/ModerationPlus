@@ -10,6 +10,7 @@ import com.hypixel.hytale.server.core.command.system.arguments.types.ArgumentTyp
 
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.Universe;
+import com.hypixel.hytale.server.core.entity.entities.Player;
 import java.awt.Color;
 import me.almana.moderationplus.ModerationPlus;
 import me.almana.moderationplus.storage.Punishment;
@@ -33,7 +34,6 @@ public class UnmuteCommand extends AbstractCommand {
     @Override
     public CompletableFuture<Void> execute(CommandContext ctx) {
         CommandSender sender = ctx.sender();
-
         String targetName = ctx.get(playerArg);
 
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
@@ -42,46 +42,20 @@ public class UnmuteCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-        }
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        try {
-            PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-            List<Punishment> activeMutes = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(),
-                    "MUTE");
-
-            if (activeMutes.isEmpty()) {
-                ctx.sendMessage(Message.raw("Player " + resolvedName + " is not muted.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
+        plugin.getModerationService().unmute(targetUuid, targetName, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Unmuted " + targetName).color(Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to unmute " + targetName + " (maybe not muted?).").color(Color.RED));
             }
+        });
 
-            for (Punishment p : activeMutes) {
-                plugin.getStorageManager().deactivatePunishment(p.id());
-            }
-
-            // Send messages
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " unmuted " + resolvedName;
-            Universe.get().getPlayers().forEach(p -> {
-                if (p.getPacketHandler().getAuth() != null
-                        && com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(p.getUuid(),
-                                "moderation.notify")) {
-                    p.sendMessage(Message.raw(staffMsg).color(Color.GREEN));
-                }
-            });
-            com.hypixel.hytale.server.core.console.ConsoleSender.INSTANCE
-                    .sendMessage(Message.raw(staffMsg).color(Color.GREEN));
-
-            if (ref != null && ref.isValid()) {
-                ref.sendMessage(Message.raw("You have been unmuted.").color(Color.GREEN));
-            }
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing unmute: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

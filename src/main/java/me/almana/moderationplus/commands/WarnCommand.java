@@ -39,7 +39,6 @@ public class WarnCommand extends AbstractCommand {
 
         String targetName = ctx.get(playerArg);
 
-        // Parse reason
         String fullInput = ctx.getInputString();
         String reason = "Warned by an operator.";
         String cmdPrefix = "warn " + targetName;
@@ -52,44 +51,22 @@ public class WarnCommand extends AbstractCommand {
         if (reason == null || reason.isEmpty())
             reason = "Warned by an operator.";
 
-        String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
-
-        // Resolve UUID
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Cannot resolve UUID for " + targetName).color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-        }
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        try {
-            PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
+        plugin.getModerationService().warn(targetUuid, targetName, reason, context).thenAccept(success -> {
+            ctx.sendMessage(Message.raw("Warned " + targetName).color(Color.GREEN));
+        });
 
-            // Create punishment
-            Punishment warning = new Punishment(0, playerData.id(), "WARN", issuerUuid, reason,
-                    System.currentTimeMillis(), 0, true, null);
-            plugin.getStorageManager().createPunishment(warning);
-
-            // Notify staff
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " warned " + resolvedName + " (" + reason + ")";
-            plugin.notifyStaff(Message.raw(staffMsg).color(Color.GREEN));
-
-            // Notify target
-            if (ref != null && ref.isValid()) {
-                ref.sendMessage(Message.raw("You have been warned. Reason: " + reason).color(Color.YELLOW));
-            }
-
-            ctx.sendMessage(Message.raw("Warned " + resolvedName).color(Color.GREEN));
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing warning: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

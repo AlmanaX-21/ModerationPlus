@@ -34,15 +34,14 @@ public class JailCommand extends AbstractCommand {
         this.plugin = plugin;
         this.requirePermission("moderation.jail");
         this.playerArg = withRequiredArg("player", "Player to jail", (ArgumentType<String>) ArgTypes.STRING);
+        setAllowsExtraArguments(true);
     }
 
-    @Override
     public CompletableFuture<Void> execute(CommandContext ctx) {
         CommandSender sender = ctx.sender();
 
         String targetName = ctx.get(playerArg);
 
-        // Check location
         if (!plugin.getConfigManager().hasJailLocation()) {
             ctx.sendMessage(Message.raw("Jail location is not set. Use /setjail to configure.").color(Color.RED));
             if (sender.hasPermission("moderation.setjail")) {
@@ -51,119 +50,104 @@ public class JailCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        // Resolve UUID
+        String fullInput = ctx.getInputString();
+        String cmdPrefix = "jail " + targetName;
+        String argsStr = "";
+        int idx = fullInput.toLowerCase().indexOf(cmdPrefix.toLowerCase());
+        if (idx != -1 && fullInput.length() > idx + cmdPrefix.length()) {
+            argsStr = fullInput.substring(idx + cmdPrefix.length()).trim();
+        }
+
+        long durationMillis = 0;
+        String reason = "No reason specified";
+
+        if (!argsStr.isEmpty()) {
+            String[] tokens = argsStr.trim().split("\\s+");
+            String firstToken = tokens[0];
+            String lastToken = tokens[tokens.length - 1];
+            boolean parsed = false;
+
+            // Try first token as duration
+            if (firstToken.matches("^[0-9]+.*")) {
+                try {
+                    durationMillis = me.almana.moderationplus.utils.TimeUtils.parseDuration(firstToken);
+                    if (durationMillis <= 0) {
+                        ctx.sendMessage(Message.raw("Duration must be positive.").color(Color.RED));
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    String candidateReason = argsStr.substring(firstToken.length()).trim();
+                    if (!candidateReason.isEmpty()) reason = candidateReason;
+                    parsed = true;
+                } catch (IllegalArgumentException e) {
+                     ctx.sendMessage(Message.raw("Invalid duration format: " + firstToken + " (Example: 10m, 2h, 1d)").color(Color.RED));
+                     return CompletableFuture.completedFuture(null);
+                }
+            } 
+            
+            // If not first, try last token
+            if (!parsed && tokens.length > 1 && lastToken.matches("^[0-9]+.*")) {
+                try {
+                    long duration = me.almana.moderationplus.utils.TimeUtils.parseDuration(lastToken);
+                    if (duration > 0) {
+                        durationMillis = duration;
+                        String candidateReason = argsStr.substring(0, argsStr.length() - lastToken.length()).trim();
+                        if (!candidateReason.isEmpty()) reason = candidateReason;
+                        parsed = true;
+                    }
+                } catch (IllegalArgumentException e) {
+                     // If last token looks like duration but fails, notify user to avoid confusion
+                     ctx.sendMessage(Message.raw("Invalid duration format: " + lastToken + " (Example: 10m, 2h, 1d)").color(Color.RED));
+                     return CompletableFuture.completedFuture(null);
+                }
+            }
+
+            if (!parsed) {
+                reason = argsStr;
+            }
+        }
+
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Cannot resolve UUID for " + targetName).color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        boolean isOnline = false;
-
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-            isOnline = true;
-        }
-
-        // Check bypass
-        if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                "moderation.jail.bypass")) {
-            ctx.sendMessage(Message.raw(resolvedName + " cannot be jailed.").color(Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
+        me.almana.moderationplus.storage.StorageManager.PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, targetName);
         try {
-            PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-
-            // Teleport online
-            if (isOnline && ref != null) {
-                UUID worldUuid = ref.getWorldUuid();
-                if (worldUuid != null) {
-                    World world = Universe.get().getWorld(worldUuid);
-                    if (world != null) {
-                        ((Executor) world).execute(() -> {
-                            if (ref.isValid()) {
-                                // Capture location
-                                com.hypixel.hytale.server.core.modules.entity.component.TransformComponent transform = ref
-                                        .getReference().getStore().getComponent(ref.getReference(),
-                                                com.hypixel.hytale.server.core.modules.entity.component.TransformComponent
-                                                        .getComponentType());
-                                String originalLocStr = "";
-                                if (transform != null) {
-                                    Vector3d pos = transform.getPosition();
-                                    Vector3f rot = transform.getRotation();
-                                    // Location format
-                                    originalLocStr = worldUuid.toString() + ":" + pos.x + "," + pos.y + "," + pos.z
-                                            + "," + rot.x + "," + rot.y + "," + rot.z;
-                                }
-
-                                // Async database insert
-                                final String finalOriginalLocStr = originalLocStr;
-                                CompletableFuture.runAsync(() -> {
-                                    try {
-                                        // Insert punishment
-                                        String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString()
-                                                : "CONSOLE";
-                                        Punishment punishment = new Punishment(
-                                                0,
-                                                playerData.id(),
-                                                "JAIL",
-                                                issuerUuid,
-                                                "Jailed by staff",
-                                                System.currentTimeMillis(),
-                                                0,
-                                                true,
-                                                finalOriginalLocStr); // Store location
-                                        plugin.getStorageManager().insertPunishment(punishment);
-                                    } catch (Exception e) {
-                                        e.printStackTrace();
-                                    }
-                                });
-
-                                double[] jailLoc = plugin.getConfigManager().getJailLocation();
-                                Vector3d jailPos = new Vector3d(jailLoc[0], jailLoc[1], jailLoc[2]);
-                                Vector3f jailRot = new Vector3f(0, 0, 0);
-
-                                Teleport teleport = new Teleport(jailPos, jailRot);
-                                ref.getReference().getStore().addComponent(ref.getReference(),
-                                        Teleport.getComponentType(), teleport);
-
-                                // Add components
-                                plugin.addJailedPlayer(targetUuid, jailPos);
-                                plugin.addFrozenPlayer(targetUuid, jailPos);
-                            }
-                        });
-                    }
-                }
-            } else {
-                // Offline player
-                String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
-                Punishment punishment = new Punishment(
-                        0,
-                        playerData.id(),
-                        "JAIL",
-                        issuerUuid,
-                        "Jailed by staff",
-                        System.currentTimeMillis(),
-                        0,
-                        true,
-                        null); // No location
-                plugin.getStorageManager().insertPunishment(punishment);
+            List<Punishment> activeJails = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(), "JAIL");
+            if (!activeJails.isEmpty()) {
+                ctx.sendMessage(Message.raw("Player is already jailed.").color(Color.RED));
+                return CompletableFuture.completedFuture(null);
             }
-
-            // Notify staff
-            String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
-            plugin.notifyStaff(Message.raw("[Staff] " + issuerName + " jailed " + resolvedName + ".").color(Color.RED));
-
-            ctx.sendMessage(Message.raw("Jailed " + resolvedName).color(Color.GREEN));
-
         } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error jailing player: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
+             e.printStackTrace();
         }
 
-        return CompletableFuture.completedFuture(null);
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
+
+        me.almana.moderationplus.api.event.staff.StaffJailEvent event = new me.almana.moderationplus.api.event.staff.StaffJailEvent(
+                context.issuerUuid(), targetUuid, context.source().name(), durationMillis, reason
+        );
+
+        final long finalDuration = durationMillis;
+        final String finalReason = reason;
+
+        return CompletableFuture.runAsync(() -> plugin.getEventBus().dispatch(event), com.hypixel.hytale.server.core.HytaleServer.SCHEDULED_EXECUTOR)
+                .thenCompose(v -> {
+                    if (event.isCancelled()) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    return plugin.getModerationService().jail(targetUuid, targetName, finalDuration, finalReason, context).thenAccept(success -> {
+                        if (success) {
+                            // Success message handled by service
+                        } else {
+                            ctx.sendMessage(Message.raw("Failed to jail " + targetName + ".").color(Color.RED));
+                        }
+                    });
+                });
     }
 }
