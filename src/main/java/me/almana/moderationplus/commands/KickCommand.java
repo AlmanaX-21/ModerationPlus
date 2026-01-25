@@ -38,9 +38,7 @@ public class KickCommand extends AbstractCommand {
     @Override
     public CompletableFuture<Void> execute(CommandContext ctx) {
         CommandSender sender = ctx.sender();
-
         String targetName = ctx.get(playerArg);
-
 
         String fullInput = ctx.getInputString();
         String reason = "Kicked by an operator.";
@@ -54,70 +52,32 @@ public class KickCommand extends AbstractCommand {
         if (reason == null || reason.isEmpty())
             reason = "Kicked by an operator.";
 
-        String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
-
-
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Player '" + targetName + "' not found in database.").color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref == null || !ref.isValid()) {
-            ctx.sendMessage(Message.raw("Player '" + targetName + "' is not online.").color(Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
-        if (sender instanceof Player && ref.getUuid().equals(sender.getUuid())) {
+        if (sender instanceof Player && targetUuid.equals(sender.getUuid())) {
             ctx.sendMessage(Message.raw("You cannot kick yourself.").color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = ref.getUsername();
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-
-        if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                "moderation.bypass")) {
-            ctx.sendMessage(Message.raw(resolvedName + " cannot be punished.").color(Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
-        try {
-
-            PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-
-            Punishment kick = new Punishment(0, playerData.id(), "KICK", issuerUuid, reason, System.currentTimeMillis(),
-                    0, false, "{}");
-            plugin.getStorageManager().createPunishment(kick);
-
-
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " kicked " + resolvedName + " (" + reason + ")";
-            plugin.notifyStaff(Message.raw(staffMsg).color(Color.GREEN));
-
-
-
-            if (ref != null && ref.isValid()) {
-                final String finalReason = reason;
-                UUID worldUuid = ref.getWorldUuid();
-                if (worldUuid != null) {
-                    World world = Universe.get().getWorld(worldUuid);
-                    if (world != null) {
-                        ((Executor) world).execute(() -> {
-                            if (ref.isValid()) {
-                                ref.getPacketHandler().disconnect("You have been kicked.\nReason: " + finalReason);
-                            }
-                        });
-                    }
-                }
+        plugin.getModerationService().kick(targetUuid, targetName, reason, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Kicked " + targetName).color(Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to kick " + targetName + " (player offline or bypassed).")
+                        .color(Color.RED));
             }
+        });
 
-            ctx.sendMessage(Message.raw("Kicked " + resolvedName).color(Color.GREEN));
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing kick: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

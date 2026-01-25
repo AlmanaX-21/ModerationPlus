@@ -32,100 +32,26 @@ public class UnjailCommand extends AbstractCommand {
 
         String targetName = ctx.get(playerArg);
 
-
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Cannot resolve UUID for " + targetName).color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        com.hypixel.hytale.server.core.universe.PlayerRef ref = com.hypixel.hytale.server.core.universe.Universe.get()
-                .getPlayer(targetUuid);
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-        }
-
-        try {
-            PlayerData playerData = plugin.getStorageManager().getPlayerByUUID(targetUuid);
-            if (playerData == null) {
-                ctx.sendMessage(Message.raw("Player " + resolvedName + " has no jail record.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
+        plugin.getModerationService().unjail(targetUuid, targetName, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Unjailed " + targetName).color(Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to unjail " + targetName + " (maybe not imprisoned?).")
+                        .color(Color.RED));
             }
-
-
-            java.util.List<me.almana.moderationplus.storage.Punishment> jails = plugin.getStorageManager()
-                    .getActivePunishmentsByType(playerData.id(), "JAIL");
-            String restoreLocData = null;
-            if (!jails.isEmpty()) {
-                restoreLocData = jails.get(0).extraData();
-            }
-
-            int deactivated = plugin.getStorageManager().deactivatePunishmentsByType(playerData.id(), "JAIL");
-
-            if (deactivated == 0) {
-                ctx.sendMessage(Message.raw(resolvedName + " is not jailed.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
-            }
-
-
-            plugin.removeJailedPlayer(targetUuid);
-            plugin.removeFrozenPlayer(targetUuid);
-
-
-            if (restoreLocData != null && !restoreLocData.isEmpty() && ref != null && ref.isValid()) {
-                try {
-                    String[] parts = restoreLocData.split(":");
-                    if (parts.length == 2) {
-                        UUID worldUuid = UUID.fromString(parts[0]);
-                        String[] coords = parts[1].split(",");
-                        if (coords.length >= 6) {
-                            double x = Double.parseDouble(coords[0]);
-                            double y = Double.parseDouble(coords[1]);
-                            double z = Double.parseDouble(coords[2]);
-                            float yaw = Float.parseFloat(coords[3]);
-                            float pitch = Float.parseFloat(coords[4]);
-
-
-                            com.hypixel.hytale.server.core.universe.world.World world = com.hypixel.hytale.server.core.universe.Universe
-                                    .get().getWorld(worldUuid);
-                            if (world != null) {
-
-                                com.hypixel.hytale.math.vector.Vector3d targetPos = new com.hypixel.hytale.math.vector.Vector3d(
-                                        x, y, z);
-                                com.hypixel.hytale.math.vector.Vector3f targetRot = new com.hypixel.hytale.math.vector.Vector3f(
-                                        yaw, pitch, 0);
-
-                                ((java.util.concurrent.Executor) world).execute(() -> {
-                                    if (ref.isValid()) {
-                                        com.hypixel.hytale.server.core.modules.entity.teleport.Teleport teleport = new com.hypixel.hytale.server.core.modules.entity.teleport.Teleport(
-                                                targetPos, targetRot);
-                                        ref.getReference().getStore().addComponent(ref.getReference(),
-                                                com.hypixel.hytale.server.core.modules.entity.teleport.Teleport
-                                                        .getComponentType(),
-                                                teleport);
-                                    }
-                                });
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    // Ignore errors
-                }
-            }
-
-
-            String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
-            plugin.notifyStaff(
-                    Message.raw("[Staff] " + issuerName + " unjailed " + resolvedName + ".").color(Color.GREEN));
-
-            ctx.sendMessage(Message.raw("Unjailed " + resolvedName).color(Color.GREEN));
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error unjailing player: " + e.getMessage()).color(java.awt.Color.RED));
-            e.printStackTrace();
-        }
+        });
 
         return CompletableFuture.completedFuture(null);
     }

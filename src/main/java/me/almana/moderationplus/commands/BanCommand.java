@@ -51,94 +51,34 @@ public class BanCommand extends AbstractCommand {
         if (idx != -1 && fullInput.length() > idx + cmdPrefix.length()) {
             reason = fullInput.substring(idx + cmdPrefix.length()).trim();
         } else {
-
             reason = "Banned by an operator.";
         }
         if (reason == null || reason.isEmpty())
             reason = "Banned by an operator.";
 
         String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
 
         if (targetUuid == null) {
-
             ctx.sendMessage(Message.raw("Player '" + targetName + "' not found in database.").color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        boolean isOnline = false;
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-            isOnline = true;
-
-            if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                    "moderation.bypass")) {
-                ctx.sendMessage(Message.raw(resolvedName + " cannot be punished.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
-            }
-        }
-
-
-        PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-
-        try {
-
-            HytaleBanProvider banProvider = plugin.getBanProvider();
-
-            if (banProvider != null) {
-                if (banProvider.hasBan(targetUuid)) {
-                    ctx.sendMessage(Message.raw("Player is already natively banned.").color(Color.RED));
-                    return CompletableFuture.completedFuture(null);
-                }
-
-                UUID issuerId = (sender instanceof Player) ? sender.getUuid()
-                        : UUID.nameUUIDFromBytes("CONSOLE".getBytes());
-                InfiniteBan nativeBan = new InfiniteBan(targetUuid, issuerId, Instant.now(), reason);
-                banProvider.modify(bans -> {
-                    bans.put(targetUuid, nativeBan);
-                    return true;
-                });
+        plugin.getModerationService().ban(targetUuid, targetName, reason, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Banned " + targetName).color(Color.GREEN));
             } else {
-                ctx.sendMessage(Message.raw(
-                        "Error: Native Ban Provider not found. Proceeding with DB only (Will not block login!).")
+                ctx.sendMessage(Message.raw("Failed to ban " + targetName + " (likely bypassed or already banned).")
                         .color(Color.RED));
             }
+        });
 
-            List<Punishment> activeBans = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(), "BAN");
-            if (activeBans.isEmpty()) {
-                Punishment ban = new Punishment(0, playerData.id(), "BAN", issuerUuid, reason,
-                        System.currentTimeMillis(), 0, true, "{}");
-                plugin.getStorageManager().createPunishment(ban);
-            }
-
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " banned " + resolvedName + " (" + reason + ")";
-            plugin.notifyStaff(Message.raw(staffMsg).color(Color.GREEN));
-
-            if (isOnline && ref != null && ref.isValid()) {
-                final String finalReason = reason;
-                UUID worldUuid = ref.getWorldUuid();
-                if (worldUuid != null) {
-                    World world = Universe.get().getWorld(worldUuid);
-                    if (world != null) {
-                        ((Executor) world).execute(() -> {
-                            if (ref.isValid()) {
-                                ref.getPacketHandler()
-                                        .disconnect("You are permanently banned.\nReason: " + finalReason);
-                            }
-                        });
-                    }
-                }
-            }
-
-            ctx.sendMessage(Message.raw("Banned " + resolvedName).color(Color.GREEN));
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing ban: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

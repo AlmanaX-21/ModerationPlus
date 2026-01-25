@@ -8,15 +8,20 @@ import com.hypixel.hytale.server.core.asset.type.gameplay.WorldMapConfig;
 import com.hypixel.hytale.server.core.entity.entities.Player;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
 import com.hypixel.hytale.server.core.universe.world.World;
-import com.hypixel.hytale.server.core.universe.world.WorldMapTracker;
-import com.hypixel.hytale.server.core.universe.world.worldmap.WorldMapManager;
 import com.hypixel.hytale.server.core.util.PositionUtil;
 import me.almana.moderationplus.ModerationPlus;
+
+import com.hypixel.hytale.server.core.universe.world.*;
+import com.hypixel.hytale.server.core.universe.world.worldmap.*;
+import com.hypixel.hytale.server.core.universe.world.worldmap.markers.*;
 
 import javax.annotation.Nonnull;
 import java.util.function.Predicate;
 
-public class VanishedPlayerIconMarkerProvider implements WorldMapManager.MarkerProvider {
+// Confirmed Package via javap
+import com.hypixel.hytale.server.core.universe.world.worldmap.markers.MapMarkerTracker;
+
+public class VanishedPlayerIconMarkerProvider implements com.hypixel.hytale.server.core.universe.world.worldmap.WorldMapManager.MarkerProvider {
 
     private final ModerationPlus plugin;
 
@@ -25,50 +30,36 @@ public class VanishedPlayerIconMarkerProvider implements WorldMapManager.MarkerP
     }
 
     @Override
-    public void update(@Nonnull World world, @Nonnull GameplayConfig gameplayConfig, @Nonnull WorldMapTracker tracker,
-            int chunkViewRadius, int playerChunkX, int playerChunkZ) {
-        WorldMapConfig worldMapConfig = gameplayConfig.getWorldMapConfig();
+    public void update(@Nonnull World world, @Nonnull MapMarkerTracker tracker,
+            int radius, int chunkX, int chunkZ) {
+        WorldMapConfig worldMapConfig = world.getGameplayConfig().getWorldMapConfig();
         if (!worldMapConfig.isDisplayPlayers())
             return;
-        if (!tracker.shouldUpdatePlayerMarkers())
-            return;
 
-        Player player = tracker.getPlayer();
-        int chunkViewRadiusSq = chunkViewRadius * chunkViewRadius;
+        int chunkViewRadiusSq = radius * radius;
+        String currentWorldName = world.getName();
+        
+        for (me.almana.moderationplus.snapshot.VanishedPlayerSnapshot snapshot : plugin.getVanishedSnapshots().values()) {
+            if (!snapshot.worldName().equals(currentWorldName)) continue;
+            
+            // Distance check
+            Vector3d pos = snapshot.position();
+            int otherChunkX = (int) pos.x >> 5;
+            int otherChunkZ = (int) pos.z >> 5;
 
-        Predicate<PlayerRef> playerMapFilter = tracker.getPlayerMapFilter();
+            int chunkDiffX = otherChunkX - chunkX;
+            int chunkDiffZ = otherChunkZ - chunkZ;
 
-        for (PlayerRef otherPlayer : world.getPlayerRefs()) {
-
-            if (otherPlayer.getUuid().equals(player.getUuid()))
-                continue;
-
-
-            if (plugin.isVanished(otherPlayer.getUuid()))
-                continue;
-
-            Transform otherPlayerTransform = otherPlayer.getTransform();
-            Vector3d otherPos = otherPlayerTransform.getPosition();
-
-            int otherChunkX = (int) otherPos.x >> 5;
-            int otherChunkZ = (int) otherPos.z >> 5;
-            int chunkDiffX = otherChunkX - playerChunkX;
-            int chunkDiffZ = otherChunkZ - playerChunkZ;
-
-            int chunkDistSq = chunkDiffX * chunkDiffX + chunkDiffZ * chunkDiffZ;
-            if (chunkDistSq > chunkViewRadiusSq)
-                continue;
-            if (playerMapFilter != null && playerMapFilter.test(otherPlayer))
-                continue;
-
-            tracker.trySendMarker(chunkViewRadius, playerChunkX, playerChunkZ, otherPos, otherPlayer
-                    .getHeadRotation().getYaw(),
-                    "Player-" +
-                            String.valueOf(otherPlayer.getUuid()),
-                    "Player: " + otherPlayer.getUsername(), otherPlayer, (id, name, op) -> new MapMarker(id, name,
-                            "Player.png", PositionUtil.toTransformPacket(op.getTransform()), null));
+            if (chunkDiffX * chunkDiffX + chunkDiffZ * chunkDiffZ > chunkViewRadiusSq) continue;
+            
+            String markerId = "Player-" + snapshot.uuid().toString();
+            String markerLabel = "Player: " + snapshot.username();
+            
+            Transform t = new Transform(snapshot.position(), new com.hypixel.hytale.math.vector.Vector3f(0, snapshot.yaw(), 0));
+            MapMarker marker = new MapMarker(markerId, markerLabel, "Player.png", PositionUtil.toTransformPacket(t), null);
+            
+            // Confirmed API: trySendMarker(int radius, int chunkX, int chunkZ, MapMarker marker)
+            tracker.trySendMarker(radius, chunkX, chunkZ, marker);
         }
-
-        tracker.resetPlayerMarkersUpdateTimer();
     }
 }

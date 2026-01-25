@@ -40,7 +40,6 @@ public class MuteCommand extends AbstractCommand {
 
         String targetName = ctx.get(playerArg);
 
-
         String fullInput = ctx.getInputString();
         String reason = "Muted by an operator.";
         String cmdPrefix = "mute " + targetName;
@@ -53,59 +52,27 @@ public class MuteCommand extends AbstractCommand {
         if (reason == null || reason.isEmpty())
             reason = "Muted by an operator.";
 
-        String issuerUuid = (sender instanceof Player) ? sender.getUuid().toString() : "CONSOLE";
-
-
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Cannot resolve UUID for " + targetName).color(Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-        }
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-
-        if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                "moderation.bypass")) {
-            ctx.sendMessage(Message.raw(resolvedName + " cannot be punished.").color(Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
-        try {
-            PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
-
-
-            List<Punishment> activeMutes = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(),
-                    "MUTE");
-            if (!activeMutes.isEmpty()) {
-                ctx.sendMessage(Message.raw("Player is already muted.").color(Color.RED));
-                return CompletableFuture.completedFuture(null);
+        plugin.getModerationService().mute(targetUuid, targetName, reason, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Muted " + targetName).color(Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to mute " + targetName + " (likely bypassed or already muted).")
+                        .color(Color.RED));
             }
+        });
 
-
-            Punishment mute = new Punishment(0, playerData.id(), "MUTE", issuerUuid, reason, System.currentTimeMillis(),
-                    0, true, "{}");
-            plugin.getStorageManager().createPunishment(mute);
-
-
-            String staffMsg = "[Staff] " + sender.getDisplayName() + " muted " + resolvedName + " (" + reason + ")";
-            plugin.notifyStaff(Message.raw(staffMsg).color(Color.GREEN));
-
-
-            if (ref != null && ref.isValid()) {
-                ref.sendMessage(Message.raw("You have been permanently muted.\nReason: " + reason).color(Color.RED));
-            }
-
-            ctx.sendMessage(Message.raw("Muted " + resolvedName).color(Color.GREEN));
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing mute: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

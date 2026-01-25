@@ -41,50 +41,20 @@ public class FreezeCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        PlayerRef ref = Universe.get().getPlayer(targetUuid);
-        if (ref == null || !ref.isValid()) {
-            ctx.sendMessage(Message.raw("Player '" + targetName + "' is not online.").color(java.awt.Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
-        String resolvedName = ref.getUsername();
-
-        if (com.hypixel.hytale.server.core.permissions.PermissionsModule.get().hasPermission(targetUuid,
-                "moderation.freeze.bypass")) {
-            ctx.sendMessage(Message.raw(resolvedName + " cannot be frozen.").color(java.awt.Color.RED));
-            return CompletableFuture.completedFuture(null);
-        }
-
-        UUID worldUuid = ref.getWorldUuid();
-        if (worldUuid != null) {
-            World world = Universe.get().getWorld(worldUuid);
-            if (world != null) {
-                ((Executor) world).execute(() -> {
-                    if (ref.isValid()) {
-                        com.hypixel.hytale.server.core.modules.entity.component.TransformComponent transform = ref
-                                .getReference()
-                                .getStore().getComponent(ref.getReference(),
-                                        com.hypixel.hytale.server.core.modules.entity.component.TransformComponent
-                                                .getComponentType());
-
-                        if (transform != null) {
-                            plugin.addFrozenPlayer(targetUuid, transform.getPosition());
-                        } else {
-                            plugin.addFrozenPlayer(targetUuid, new com.hypixel.hytale.math.vector.Vector3d(0, 100, 0));
-                        }
-
-                        ref.sendMessage(Message.raw("You have been frozen by staff. Do not log out.")
-                                .color(java.awt.Color.RED));
-                    }
-                });
-            }
-        }
-
         String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
-        plugin.notifyStaff(
-                Message.raw("[Staff] " + issuerName + " froze " + resolvedName + ".").color(java.awt.Color.YELLOW));
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        ctx.sendMessage(Message.raw("Froze " + resolvedName).color(java.awt.Color.GREEN));
+        plugin.getModerationService().freeze(targetUuid, targetName, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Froze " + targetName).color(java.awt.Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to freeze " + targetName + " (offline or bypassed).")
+                        .color(java.awt.Color.RED));
+            }
+        });
 
         return CompletableFuture.completedFuture(null);
     }

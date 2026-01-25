@@ -22,6 +22,11 @@ public class WebAcknowledgementService {
     }
 
     public void sendAck(String commandId, boolean success, String message) {
+        // A2: Runtime Guard
+        if (!plugin.getConfigManager().isWebPanelEnabled()) {
+            return;
+        }
+
         CompletableFuture.runAsync(() -> {
             try {
                 me.almana.moderationplus.storage.StorageManager.ServerIdentity identity = plugin.getStorageManager()

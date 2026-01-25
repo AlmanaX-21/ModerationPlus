@@ -33,36 +33,27 @@ public class UnfreezeCommand extends AbstractCommand {
 
         String targetName = ctx.get(playerArg);
 
-
         UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
         if (targetUuid == null) {
             ctx.sendMessage(Message.raw("Cannot resolve UUID for " + targetName).color(java.awt.Color.RED));
             return CompletableFuture.completedFuture(null);
         }
 
-        String resolvedName = targetName;
-        PlayerRef ref = Universe.get().getPlayer(targetUuid); // Safe lookup
-        if (ref != null && ref.isValid()) {
-            resolvedName = ref.getUsername();
-        }
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        final String finalResolvedName = resolvedName;
-
-
-        return plugin.removeFrozenPlayer(targetUuid).thenCompose(wasFrozen -> {
-            if (!wasFrozen) {
-                ctx.sendMessage(Message.raw(finalResolvedName + " is not frozen.").color(java.awt.Color.RED));
-                return CompletableFuture.completedFuture(null);
+        plugin.getModerationService().unfreeze(targetUuid, targetName, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Unfroze " + targetName).color(java.awt.Color.GREEN));
+            } else {
+                ctx.sendMessage(Message.raw("Failed to unfreeze " + targetName + " (maybe not frozen?).")
+                        .color(java.awt.Color.RED));
             }
-
-
-            String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
-            plugin.notifyStaff(Message.raw("[Staff] " + issuerName + " unfroze " + finalResolvedName + ".")
-                    .color(java.awt.Color.GREEN));
-
-            ctx.sendMessage(Message.raw("Unfroze " + finalResolvedName).color(java.awt.Color.GREEN));
-
-            return CompletableFuture.completedFuture(null);
         });
+
+        return CompletableFuture.completedFuture(null);
     }
 }

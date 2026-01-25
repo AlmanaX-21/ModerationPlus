@@ -61,6 +61,10 @@ public class WebPanelPollingService {
     }
 
     private java.util.List<WebCommandIntent> fetchIntents() {
+        // A2: Runtime Guard
+        if (!plugin.getConfigManager().isWebPanelEnabled()) {
+            return java.util.Collections.emptyList();
+        }
         // Transport layer placeholder
         return java.util.Collections.emptyList();
     }

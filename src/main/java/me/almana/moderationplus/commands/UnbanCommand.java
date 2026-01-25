@@ -56,47 +56,20 @@ public class UnbanCommand extends AbstractCommand {
             return CompletableFuture.completedFuture(null);
         }
 
-        PlayerData playerData = plugin.getStorageManager().getOrCreatePlayer(targetUuid, resolvedName);
+        String issuerName = (sender instanceof Player) ? sender.getDisplayName() : "Console";
+        me.almana.moderationplus.service.ExecutionContext context = new me.almana.moderationplus.service.ExecutionContext(
+                (sender instanceof Player) ? sender.getUuid() : UUID.nameUUIDFromBytes("CONSOLE".getBytes()),
+                issuerName,
+                me.almana.moderationplus.service.ExecutionContext.ExecutionSource.COMMAND);
 
-        try {
-            boolean nativeUnbanned = false;
-
-            HytaleBanProvider banProvider = plugin.getBanProvider();
-            if (banProvider != null) {
-                if (banProvider.hasBan(targetUuid)) {
-                    final UUID finalUuid = targetUuid;
-                    banProvider.modify(bans -> {
-                        bans.remove(finalUuid);
-                        return true;
-                    });
-                    nativeUnbanned = true;
-                }
+        plugin.getModerationService().unban(targetUuid, resolvedName, context).thenAccept(success -> {
+            if (success) {
+                ctx.sendMessage(Message.raw("Unbanned " + targetName).color(Color.GREEN));
             } else {
-                ctx.sendMessage(Message.raw("Error: Native Ban Provider not found. Unban might be incomplete.")
-                        .color(Color.RED));
+                ctx.sendMessage(Message.raw("Failed to unban " + targetName + " (maybe not banned?).").color(Color.RED));
             }
+        });
 
-
-            List<Punishment> activeBans = plugin.getStorageManager().getActivePunishmentsByType(playerData.id(), "BAN");
-            boolean dbUnbanned = false;
-            if (!activeBans.isEmpty()) {
-                for (Punishment p : activeBans) {
-                    plugin.getStorageManager().deactivatePunishment(p.id());
-                }
-                dbUnbanned = true;
-            }
-
-            if (nativeUnbanned || dbUnbanned) {
-                ctx.sendMessage(Message.raw("[Staff] " + sender.getDisplayName() + " unbanned " + resolvedName)
-                        .color(Color.GREEN));
-            } else {
-                ctx.sendMessage(Message.raw("Player " + resolvedName + " is not banned.").color(Color.RED));
-            }
-
-        } catch (Exception e) {
-            ctx.sendMessage(Message.raw("Error processing unban: " + e.getMessage()).color(Color.RED));
-            e.printStackTrace();
-        }
         return CompletableFuture.completedFuture(null);
     }
 }

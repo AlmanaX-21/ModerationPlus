@@ -29,6 +29,7 @@ public class ModerationPlus extends JavaPlugin {
     private volatile boolean chatLocked = false;
     private final me.almana.moderationplus.config.ConfigManager configManager;
     private final java.util.Set<java.util.UUID> vanishedPlayers = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final java.util.Map<java.util.UUID, me.almana.moderationplus.snapshot.VanishedPlayerSnapshot> vanishedSnapshots = new java.util.concurrent.ConcurrentHashMap<>();
     private final me.almana.moderationplus.service.ModerationService moderationService;
     private me.almana.moderationplus.web.WebPanelPollingService webPanelPollingService;
 
@@ -70,6 +71,13 @@ public class ModerationPlus extends JavaPlugin {
         getCommandRegistry().registerCommand(new ChatLockdownCommand(this));
         getCommandRegistry().registerCommand(new FreezeCommand(this));
         getCommandRegistry().registerCommand(new UnfreezeCommand(this));
+
+        // Snapshot Updater Task (Phase 3)
+        // Runs on Main Thread to safely capture entity state for Async Map Renderer
+
+        
+        // REVISION: I will register a System to handle snapshotting since systems run on main thread during tick.
+        getEntityStoreRegistry().registerSystem(new me.almana.moderationplus.system.VanishSnapshotSystem(this));
 
         getEventRegistry().register(PlayerSetupConnectEvent.class, event -> {
             try {
@@ -138,7 +146,7 @@ public class ModerationPlus extends JavaPlugin {
 
         getEventRegistry().register(com.hypixel.hytale.server.core.event.events.player.PlayerDisconnectEvent.class,
                 event -> {
-
+                    vanishedSnapshots.remove(event.getPlayerRef().getUuid());
                     vanishedPlayers.remove(event.getPlayerRef().getUuid());
                 });
 
@@ -246,6 +254,7 @@ public class ModerationPlus extends JavaPlugin {
             this.webPanelPollingService.start();
         }
     }
+
 
     public void notifyStaff(String message) {
         notifyStaff(Message.raw(message));
@@ -476,6 +485,10 @@ public class ModerationPlus extends JavaPlugin {
 
     public boolean isVanished(java.util.UUID uuid) {
         return vanishedPlayers.contains(uuid);
+    }
+
+    public java.util.Map<java.util.UUID, me.almana.moderationplus.snapshot.VanishedPlayerSnapshot> getVanishedSnapshots() {
+        return vanishedSnapshots;
     }
 
     public me.almana.moderationplus.service.ModerationService getModerationService() {

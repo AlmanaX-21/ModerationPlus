@@ -10,6 +10,8 @@ public class WebPanelBootstrap {
     private static final HytaleLogger logger = HytaleLogger.forEnclosingClass();
 
     public void init(ModerationPlus plugin) {
+        // A1: Hard Disable Audit Log - This should NEVER appear if web_panel.enabled=false
+        logger.at(Level.INFO).log("AUDIT CHECK: WebPanelBootstrap instantiated. If web_panel is disabled, this is a BUG.");
         logger.at(Level.INFO).log("Web Panel integration enabled. Initializing...");
 
         try {

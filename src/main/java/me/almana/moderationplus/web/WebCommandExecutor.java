@@ -20,6 +20,12 @@ public class WebCommandExecutor {
     }
 
     public void processIntents(List<WebCommandIntent> intents) {
+        // A2: Runtime Guard
+        if (!plugin.getConfigManager().isWebPanelEnabled()) {
+            logger.at(Level.WARNING).log("Attempted to process web intents while disabled. Ignoring.");
+            return;
+        }
+
         if (intents == null || intents.isEmpty()) {
             return;
         }
