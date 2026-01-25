@@ -17,7 +17,7 @@ public class VanishCommand extends AbstractCommand {
     private final ModerationPlus plugin;
 
     public VanishCommand(ModerationPlus plugin) {
-        super("vanish", "Toggle vanish mode");
+        super("staffvanish", "Toggle vanish mode");
         this.plugin = plugin;
         this.requirePermission("moderation.vanish");
     }

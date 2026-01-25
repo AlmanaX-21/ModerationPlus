@@ -53,6 +53,14 @@ public class ConfigManager {
         if (config == null) {
             config = new JsonObject();
         }
+
+        // Ensure defaults exist
+        if (!config.has("jail")) {
+            JsonObject jail = new JsonObject();
+            jail.addProperty("radius", 10.0);
+            config.add("jail", jail);
+            saveConfig();
+        }
     }
 
     public long getDatabaseFlushIntervalSeconds() {
