@@ -1,11 +1,6 @@
-/**
- * Build script for the Basic Hytale Plugin Template.
- * This script handles dependencies, compilation, shadowing, and deployment.
- */
 plugins {
     id("java-library")
     id("com.gradleup.shadow") version "9.3.1"
-    // id("run-hytale") // Commented out as likely not resolved without extra config
 }
 
 val pluginGroup: String by project
@@ -40,8 +35,6 @@ sourceSets {
 }
 
 dependencies {
-    // Hytale Server API (provided by server at runtime)
-    // Hytale Server API (provided by server at runtime)
     compileOnly("com.hypixel.hytale:Server:2026.01.22-6f8bdbdc4")
     
     // Common dependencies (will be bundled in JAR)
