@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.awt.Color;
 import java.util.logging.Level;
+import me.almana.moderationplus.utils.ColorUtils;
+import me.almana.moderationplus.utils.TimeUtils;
 public class LastSeenCommand extends AbstractCommand {
 
     private static final HytaleLogger logger = HytaleLogger.forEnclosingClass();
@@ -45,34 +47,29 @@ public class LastSeenCommand extends AbstractCommand {
             }
         }
 
-        // 1. Online Check (Main Thread - Fast)
-        PlayerRef onlineRef = Universe.get().getPlayer(targetName, com.hypixel.hytale.server.core.NameMatching.EXACT_IGNORE_CASE); // Effectively final for lambda ? No, strict local var
-        String finalCurrentLocale = currentLocale; // Ensure effective finality for async usage
-
-        if (onlineRef != null && onlineRef.isValid()) {
-             String msg = plugin.getLanguageManager().translate(
-                    "command.lastseen.online",
-                    finalCurrentLocale,
-                    Map.of("player", onlineRef.getUsername()) // Use exact casing from ref
-             );
-             ctx.sendMessage(me.almana.moderationplus.utils.ColorUtils.parse(msg));
-             return CompletableFuture.completedFuture(null);
-        }
+        String finalCurrentLocale = currentLocale;
 
         return CompletableFuture.runAsync(() -> {
             try {
-                UUID offlineUuid = plugin.getStorageManager().getUuidByUsername(targetName);
-                if (offlineUuid == null) {
+                UUID targetUuid = plugin.getStorageManager().getUuidByUsername(targetName);
+                if (targetUuid == null) {
                     sendNotFound(ctx, targetName, finalCurrentLocale);
                     return;
                 }
 
-                StorageManager.PlayerData data = plugin.getStorageManager().getPlayerByUUID(offlineUuid);
+                PlayerRef ref = Universe.get().getPlayer(targetUuid);
                 
-                if (data == null) {
-                    sendNotFound(ctx, targetName, finalCurrentLocale);
-                    return;
+                if (ref != null && ref.isValid()) { 
+                     String msg = plugin.getLanguageManager().translate(
+                            "command.lastseen.online",
+                            finalCurrentLocale,
+                            Map.of("player", ref.getUsername())
+                     );
+                     ctx.sendMessage(ColorUtils.parse(msg));
+                     return;
                 }
+
+                StorageManager.PlayerData data = plugin.getStorageManager().getPlayerByUUID(targetUuid);
 
                 if (data.lastSeen() <= 0) {
                      String msg = plugin.getLanguageManager().translate(
@@ -80,17 +77,17 @@ public class LastSeenCommand extends AbstractCommand {
                             finalCurrentLocale,
                             Map.of("player", data.username())
                     );
-                    ctx.sendMessage(me.almana.moderationplus.utils.ColorUtils.parse(msg));
+                    ctx.sendMessage(ColorUtils.parse(msg));
                     return;
                 }
 
-                String formattedTime = me.almana.moderationplus.utils.TimeUtils.formatTime(data.lastSeen(), finalCurrentLocale);
+                String formattedTime = TimeUtils.formatTime(data.lastSeen(), finalCurrentLocale);
                 String msg = plugin.getLanguageManager().translate(
                         "command.lastseen.success",
                         finalCurrentLocale,
                         Map.of("player", data.username(), "time", formattedTime)
                 );
-                ctx.sendMessage(me.almana.moderationplus.utils.ColorUtils.parse(msg));
+                ctx.sendMessage(ColorUtils.parse(msg));
 
             } catch (Exception e) {
                  logger.at(Level.SEVERE).withCause(e).log("Error executing /lastseen for %s", targetName);
@@ -99,7 +96,7 @@ public class LastSeenCommand extends AbstractCommand {
                     finalCurrentLocale,
                     Map.of()
                 );
-                ctx.sendMessage(me.almana.moderationplus.utils.ColorUtils.parse(errorMsg));
+                ctx.sendMessage(ColorUtils.parse(errorMsg));
             }
         });
     }
@@ -110,6 +107,6 @@ public class LastSeenCommand extends AbstractCommand {
                 locale,
                 Map.of("player", name)
         );
-        ctx.sendMessage(me.almana.moderationplus.utils.ColorUtils.parse(msg));
+        ctx.sendMessage(ColorUtils.parse(msg));
     }
 }
